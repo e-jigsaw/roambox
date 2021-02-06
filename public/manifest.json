@@ -12,8 +12,9 @@
   "content_scripts": [
     {
       "matches": ["https://scrapbox.io/*"],
-      "run_at": "document_idle",
-      "js": ["content.js"]
+      "run_at": "document_end",
+      "js": ["content.js"],
+      "all_frames": true
     }
   ],
   "web_accessible_resources": ["inject.js"]
