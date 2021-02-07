@@ -123,9 +123,13 @@ const App = () => {
       } else if (line.text.indexOf('[todo]') >= 0) {
         text = line.text.replace(/\[todo\]/, '[done]')
       } else if (line.text.indexOf('[done]') >= 0) {
-        text = line.text.replace(/\[done\]/, '')
+        text = line.text.replace(/\[done\]\s*/, '')
       } else {
-        text = `[todo] ${line.text}`
+        if (line.nodes.type === 'indent') {
+          text = `${line.nodes.unit.tag}[todo] ${line.nodes.unit.content}`
+        } else {
+          text = `[todo] ${line.text}`
+        }
       }
       dispatch({
         type: 'send',
