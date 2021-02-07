@@ -4,19 +4,44 @@ import { render } from 'react-dom'
 import format from 'date-fns/format'
 import { useKey } from 'react-use'
 
+declare global {
+  interface Window {
+    scrapbox: any
+  }
+}
+
+let iframe
 const originalWs = window.WebSocket
 let branch = null
 let wm = 0
 let parentId = ''
+
 let addListenerWs = originalWs.prototype.addEventListener
 addListenerWs = addListenerWs.call.bind(addListenerWs)
+
 let sendWs = originalWs.prototype.send
 sendWs = sendWs.apply.bind(sendWs)
+
 originalWs.prototype.send = function (data) {
   if (branch === null) {
     branch = this
     this.addEventListener('message', (event) => {
       console.log('rcv', event.data)
+      const parsed = /\d+\[(.*)\]/.exec(event.data)
+      if (parsed !== null) {
+        if (/^{/.test(parsed[1])) {
+          const json = JSON.parse(parsed[1])
+          if (json.data.commitId) {
+            iframe.contentWindow.postMessage({
+              payload: {
+                type: 'commited',
+                id: json.data.commitId,
+              },
+              source: 'roambox',
+            })
+          }
+        }
+      }
     })
   }
   const parsed = /42(\d+)\["socket\.io\-request",(.*)\]/.exec(data)
@@ -27,53 +52,55 @@ originalWs.prototype.send = function (data) {
   return sendWs(this, arguments)
 }
 
-declare global {
-  interface Window {
-    scrapbox: any
-  }
-}
-
-let iframe
 if (window.parent === window.top) {
   iframe = document.createElement('iframe')
   iframe.src = location.href
   document.body.appendChild(iframe)
   window.addEventListener('message', async (event) => {
     if (event.data.source === 'roambox') {
-      if (parentId.length === 0) {
-        const { commitId } = await fetch(
-          `https://scrapbox.io/api/pages/${window.scrapbox.Project.name}/${event.data.payload.Page.title}`
-        ).then((res) => res.json())
-        parentId = commitId
-      }
-      const [project, user] = await Promise.all([
-        fetch(
-          `https://scrapbox.io/api/projects/${window.scrapbox.Project.name}`
-        ).then((res) => res.json()),
-        fetch('https://scrapbox.io/api/users/me').then((res) => res.json()),
-      ])
-      branch.send(
-        `42${wm + 1}["socket.io-request",${JSON.stringify({
-          method: 'commit',
-          data: {
-            changes: [
-              {
-                _update: event.data.payload.id,
-                lines: {
-                  text: 'foo',
-                },
+      switch (event.data.payload.type) {
+        case 'commited': {
+          parentId = event.data.payload.id
+          break
+        }
+        case 'send': {
+          if (parentId.length === 0) {
+            const { commitId } = await fetch(
+              `https://scrapbox.io/api/pages/${window.scrapbox.Project.name}/${event.data.payload.Page.title}`
+            ).then((res) => res.json())
+            parentId = commitId
+          }
+          const [project, user] = await Promise.all([
+            fetch(
+              `https://scrapbox.io/api/projects/${window.scrapbox.Project.name}`
+            ).then((res) => res.json()),
+            fetch('https://scrapbox.io/api/users/me').then((res) => res.json()),
+          ])
+          branch.send(
+            `42${wm + 1}["socket.io-request",${JSON.stringify({
+              method: 'commit',
+              data: {
+                changes: [
+                  {
+                    _update: event.data.payload.id,
+                    lines: {
+                      text: 'foo',
+                    },
+                  },
+                ],
+                cursor: null,
+                freeze: true,
+                kind: 'page',
+                pageId: event.data.payload.Page.id,
+                parentId,
+                projectId: project.id,
+                userId: user.id,
               },
-            ],
-            cursor: null,
-            freeze: true,
-            kind: 'page',
-            pageId: event.data.payload.Page.id,
-            parentId,
-            projectId: project.id,
-            userId: user.id,
-          },
-        })}]`
-      )
+            })}]`
+          )
+          break
+        }
+      }
     }
   })
 }
@@ -94,6 +121,7 @@ const App = () => {
         .id.replace(/^L/, '')
       iframe.contentWindow.postMessage({
         payload: {
+          type: 'send',
           id,
           Page: window.scrapbox.Page,
         },
