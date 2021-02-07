@@ -10,6 +10,7 @@ declare global {
   }
 }
 
+const isIframe = window.parent !== window
 let iframe
 const originalWs = window.WebSocket
 let branch = null
@@ -22,6 +23,10 @@ addListenerWs = addListenerWs.call.bind(addListenerWs)
 let sendWs = originalWs.prototype.send
 sendWs = sendWs.apply.bind(sendWs)
 
+const dispatch = (payload) => {
+  iframe.contentWindow.postMessage({ payload, source: 'roambox' })
+}
+
 originalWs.prototype.send = function (data) {
   if (branch === null) {
     branch = this
@@ -32,13 +37,11 @@ originalWs.prototype.send = function (data) {
         if (/^{/.test(parsed[1])) {
           const json = JSON.parse(parsed[1])
           if (json.data.commitId) {
-            iframe.contentWindow.postMessage({
-              payload: {
-                type: 'commited',
-                id: json.data.commitId,
-              },
-              source: 'roambox',
-            })
+            if (isIframe) {
+              parentId = json.data.commitId
+            } else {
+              dispatch({ type: 'commited', id: json.data.commitId })
+            }
           }
         }
       }
@@ -52,10 +55,11 @@ originalWs.prototype.send = function (data) {
   return sendWs(this, arguments)
 }
 
-if (window.parent === window.top) {
+if (!isIframe) {
   iframe = document.createElement('iframe')
   iframe.src = location.href
   document.body.appendChild(iframe)
+} else {
   window.addEventListener('message', async (event) => {
     if (event.data.source === 'roambox') {
       switch (event.data.payload.type) {
@@ -80,14 +84,7 @@ if (window.parent === window.top) {
             `42${wm + 1}["socket.io-request",${JSON.stringify({
               method: 'commit',
               data: {
-                changes: [
-                  {
-                    _update: event.data.payload.id,
-                    lines: {
-                      text: 'foo',
-                    },
-                  },
-                ],
+                changes: event.data.payload.changes,
                 cursor: null,
                 freeze: true,
                 kind: 'page',
@@ -119,13 +116,28 @@ const App = () => {
       const id = document
         .getElementsByClassName('cursor-line')[0]
         .id.replace(/^L/, '')
-      iframe.contentWindow.postMessage({
-        payload: {
-          type: 'send',
-          id,
-          Page: window.scrapbox.Page,
-        },
-        source: 'roambox',
+      const line = window.scrapbox.Page.lines.find((line) => line.id === id)
+      let text = ''
+      if (line.text.length === 0) {
+        text = '[todo]'
+      } else if (line.text.indexOf('[todo]') >= 0) {
+        text = line.text.replace(/\[todo\]/, '[done]')
+      } else if (line.text.indexOf('[done]') >= 0) {
+        text = line.text.replace(/\[done\]/, '')
+      } else {
+        text = `[todo] ${line.text}`
+      }
+      dispatch({
+        type: 'send',
+        changes: [
+          {
+            _update: id,
+            lines: {
+              text,
+            },
+          },
+        ],
+        Page: window.scrapbox.Page,
       })
     }
   )
