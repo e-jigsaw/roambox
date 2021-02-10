@@ -56,9 +56,9 @@ originalWs.prototype.send = function (data) {
 }
 
 if (!isIframe) {
-  iframe = document.createElement('iframe')
-  iframe.src = location.href
-  document.body.appendChild(iframe)
+  // iframe = document.createElement('iframe')
+  // iframe.src = location.href
+  // document.body.appendChild(iframe)
 } else {
   window.addEventListener('message', async (event) => {
     if (event.data.source === 'roambox') {
@@ -131,18 +131,18 @@ const App = () => {
           text = `[todo] ${line.text}`
         }
       }
-      dispatch({
-        type: 'send',
-        changes: [
-          {
-            _update: id,
-            lines: {
-              text,
-            },
-          },
-        ],
-        Page: window.scrapbox.Page,
-      })
+      const cursor = document.getElementById('text-input')
+      const deleteEvent = document.createEvent('Events')
+      deleteEvent.initEvent('keydown', true, true)
+      deleteEvent.keyCode = 37
+      deleteEvent.shiftKey = true
+      deleteEvent.metaKey = true
+      cursor.dispatchEvent(deleteEvent)
+      cursor.dispatchEvent(deleteEvent)
+      cursor.value = text
+      const event = document.createEvent('Event')
+      event.initEvent('input', true, true)
+      cursor.dispatchEvent(event)
     }
   )
   return (
