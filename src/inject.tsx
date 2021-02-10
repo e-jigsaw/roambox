@@ -10,98 +10,6 @@ declare global {
   }
 }
 
-const isIframe = window.parent !== window
-let iframe
-const originalWs = window.WebSocket
-let branch = null
-let wm = 0
-let parentId = ''
-
-let addListenerWs = originalWs.prototype.addEventListener
-addListenerWs = addListenerWs.call.bind(addListenerWs)
-
-let sendWs = originalWs.prototype.send
-sendWs = sendWs.apply.bind(sendWs)
-
-const dispatch = (payload) => {
-  iframe.contentWindow.postMessage({ payload, source: 'roambox' })
-}
-
-originalWs.prototype.send = function (data) {
-  if (branch === null) {
-    branch = this
-    this.addEventListener('message', (event) => {
-      console.log('rcv', event.data)
-      const parsed = /\d+\[(.*)\]/.exec(event.data)
-      if (parsed !== null) {
-        if (/^{/.test(parsed[1])) {
-          const json = JSON.parse(parsed[1])
-          if (json.data.commitId) {
-            if (isIframe) {
-              parentId = json.data.commitId
-            } else {
-              dispatch({ type: 'commited', id: json.data.commitId })
-            }
-          }
-        }
-      }
-    })
-  }
-  const parsed = /42(\d+)\["socket\.io\-request",(.*)\]/.exec(data)
-  if (parsed !== null) {
-    wm = parseInt(parsed[1])
-    console.log('snt', JSON.parse(parsed[2]))
-  }
-  return sendWs(this, arguments)
-}
-
-if (!isIframe) {
-  // iframe = document.createElement('iframe')
-  // iframe.src = location.href
-  // document.body.appendChild(iframe)
-} else {
-  window.addEventListener('message', async (event) => {
-    if (event.data.source === 'roambox') {
-      switch (event.data.payload.type) {
-        case 'commited': {
-          parentId = event.data.payload.id
-          break
-        }
-        case 'send': {
-          if (parentId.length === 0) {
-            const { commitId } = await fetch(
-              `https://scrapbox.io/api/pages/${window.scrapbox.Project.name}/${event.data.payload.Page.title}`
-            ).then((res) => res.json())
-            parentId = commitId
-          }
-          const [project, user] = await Promise.all([
-            fetch(
-              `https://scrapbox.io/api/projects/${window.scrapbox.Project.name}`
-            ).then((res) => res.json()),
-            fetch('https://scrapbox.io/api/users/me').then((res) => res.json()),
-          ])
-          branch.send(
-            `42${wm + 1}["socket.io-request",${JSON.stringify({
-              method: 'commit',
-              data: {
-                changes: event.data.payload.changes,
-                cursor: null,
-                freeze: true,
-                kind: 'page',
-                pageId: event.data.payload.Page.id,
-                parentId,
-                projectId: project.id,
-                userId: user.id,
-              },
-            })}]`
-          )
-          break
-        }
-      }
-    }
-  })
-}
-
 const App = () => {
   const gotoDailyNote = useCallback(() => {
     location.href = `https://scrapbox.io/${
@@ -132,13 +40,18 @@ const App = () => {
         }
       }
       const cursor = document.getElementById('text-input')
-      const deleteEvent = document.createEvent('Events')
-      deleteEvent.initEvent('keydown', true, true)
-      deleteEvent.keyCode = 37
-      deleteEvent.shiftKey = true
-      deleteEvent.metaKey = true
-      cursor.dispatchEvent(deleteEvent)
-      cursor.dispatchEvent(deleteEvent)
+      const endEvent = document.createEvent('Events')
+      endEvent.initEvent('keydown', true, true)
+      endEvent.keyCode = 39 // ArrowRight
+      endEvent.metaKey = true
+      cursor.dispatchEvent(endEvent)
+      const selectEvent = document.createEvent('Events')
+      selectEvent.initEvent('keydown', true, true)
+      selectEvent.keyCode = 37 // ArrowLeft
+      selectEvent.shiftKey = true
+      selectEvent.metaKey = true
+      cursor.dispatchEvent(selectEvent)
+      cursor.dispatchEvent(selectEvent)
       cursor.value = text
       const event = document.createEvent('Event')
       event.initEvent('input', true, true)
